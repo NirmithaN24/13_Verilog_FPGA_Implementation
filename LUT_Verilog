@@ -1,0 +1,54 @@
+FPGA Implementation of LUT using Verilog
+
+Design code: 
+module sine_verilog_lut #(
+parameter ADDR_WIDTH = 8, // 2^8 = 256 samples
+parameter DATA_WIDTH = 12 // 12-bit sine values
+)(
+input wire clk,
+input wire reset,
+output reg [DATA_WIDTH-1:0] sine_out
+);
+reg [ADDR_WIDTH-1:0] addr;
+// ROM to store sine values (precomputed offline)
+reg [DATA_WIDTH-1:0] sine_rom [0:(1<<ADDR_WIDTH)-1];
+// Initialize ROM with sine samples (values in hex/decimal)
+initial begin
+$readmemh("sine_verilog.mem", sine_rom); // preload data from file
+end
+// Address counter
+always @(posedge clk or posedge reset) begin
+if (reset)
+addr <= 0;
+else
+addr <= addr + 1;
+end
+// Output sine value
+always @(posedge clk) begin
+sine_out <= sine_rom[addr];
+end
+
+Testbench code:
+`timescale 1ns/1ps
+module sine_verilog_lut_tb;
+reg clk, reset;
+wire [11:0] sine_out;
+sine_verilog_lut uut (
+.clk(clk),
+.reset(reset),
+.sine_out(sine_out)
+);
+// Clock
+initial begin
+clk = 0;
+forever #5 clk = ~clk;
+end
+initial begin
+$dumpfile("sine_verilog_lut.vcd");
+$dumpvars(0, sine_verilog_lut_tb);
+reset = 1; #20;
+reset = 0;
+#2000 $finish;
+end
+endmodule
+endmodule
