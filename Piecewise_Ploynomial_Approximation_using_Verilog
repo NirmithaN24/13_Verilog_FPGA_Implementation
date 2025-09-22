@@ -1,0 +1,69 @@
+FPGA Implementation of Piecewise Ploynomial Approximation using Verilog
+
+Design code: 
+module sine_verilog_poly #(
+parameter ADDR_WIDTH = 8, // 256 steps
+parameter DATA_WIDTH = 12 // 12-bit output
+)(
+input wire clk,
+input wire reset,
+output reg [DATA_WIDTH-1:0] sine_out
+);
+reg [ADDR_WIDTH-1:0] phase;
+// Phase counter
+always @(posedge clk or posedge reset) begin
+if (reset)
+phase <= 0;
+else
+phase <= phase + 1;
+end
+// Quadrant and local angle
+wire [1:0] quadrant = phase[7:6]; // 0-3
+wire [5:0] local_addr = phase[5:0]; // 0-63
+// Map to radians in Q8.8 [0..π/2]
+reg signed [15:0] x;
+reg signed [31:0] x2, x3, x5;
+reg signed [15:0] poly;
+always @(*) begin
+// Convert local_addr → angle in [0..π/2]
+// π/2 ≈ 402 (Q8.8)
+if (quadrant[0] == 1'b0)
+x = (local_addr * 402) >> 6; // 0..π/2
+else
+x = ((63 - local_addr) * 402) >> 6; // mirror angle
+// Polynomial: sin(x) ≈ x - x^3/6 + x^5/120
+x2 = x * x; // Q16.16
+x3 = (x2 >>> 8) * x; // Q24.8
+x5 = ((x3 >>> 8) * x2) >>> 8; // Q24.8 approx
+poly = x - (x3 / 1536) + (x5 / 30720); // 6*256=1536, 120*256=30720
+// Apply quadrant sign
+case (quadrant[1])
+1'b0: sine_out = 2048 + (poly >>> 4); // positive
+1'b1: sine_out = 2048 - (poly >>> 4); // negative
+endcase
+end
+endmodule
+
+Testbench code:
+`timescale 1ns/1ps
+module sine_verilog_poly_tb;
+reg clk, reset;
+wire [11:0] sine_out;
+sine_verilog_poly uut (
+.clk(clk),
+.reset(reset),
+.sine_out(sine_out)
+);
+// Clock generator
+initial begin
+clk = 0;
+forever #5 clk = ~clk;
+end
+initial begin
+$dumpfile("sine_verilog_poly.vcd");
+$dumpvars(0, sine_verilog_poly_tb);
+reset = 1; #20;
+reset = 0;
+#10000 $finish;
+end
+endmodule
